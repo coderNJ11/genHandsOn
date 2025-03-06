@@ -7,20 +7,66 @@ from langchain_community.vectorstores import FAISS
 app = Flask(__name__)
 
 
-# Load submissions from JSON file
+def flatten_and_extract_text(submission):
+    """
+    Flatten submission `data` and `metadata`. Returns:
+    - A string that concatenates all keys and values for semantic embedding
+    - The original submission object
+    """
+
+    def flatten_dict(d, parent_key='', sep=' '):
+        """
+        Recursively flattens a dictionary into key-value pair strings.
+        """
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(flatten_dict(v, new_key, sep=sep).items())
+            elif isinstance(v, list):
+                items.append((new_key, ' '.join(map(str, v))))
+            else:
+                items.append((new_key, str(v)))
+        return dict(items)
+
+    flattened_text = ""
+    if "data" in submission:
+        flattened_text += " ".join([f"{k}: {v}" for k, v in flatten_dict(submission["data"]).items()])
+    if "metadata" in submission:
+        flattened_text += " " + " ".join([f"{k}: {v}" for k, v in flatten_dict(submission["metadata"]).items()])
+    return flattened_text.strip(), submission
+
+
+def preprocess_submissions(submissions):
+    """
+    Preprocess all submissions: flatten and extract relevant fields for embedding.
+    Returns:
+    - A list of texts for generating embeddings
+    - A list of the original submission objects
+    """
+    processed_docs = []
+    submission_objects = []
+    for submission in submissions:
+        flattened_text, original_obj = flatten_and_extract_text(submission)
+        processed_docs.append(flattened_text)
+        submission_objects.append(original_obj)
+    return processed_docs, submission_objects
+
+
 def load_submissions(file_path):
+    """
+    Load submissions from a JSON file.
+    """
     with open(file_path, "r") as file:
-        submissions = json.load(file)
-    return submissions
+        return json.load(file)
 
 
-# Create FAISS vector database from submissions
 def create_vector_db(submissions):
-    # Extract document texts and metadata from the submissions
-    documents = [
-        {"text": sub["data"]["comments"], "metadata": {"id": sub["_id"]}}
-        for sub in submissions if "comments" in sub.get("data", {})
-    ]
+    """
+    Create a FAISS vector database using OpenAI embeddings for the provided submissions.
+    """
+    # Flatten and extract text for embeddings, while keeping submission objects
+    documents, submission_objects = preprocess_submissions(submissions)
 
     # Ensure OpenAI API key is set
     openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -30,48 +76,53 @@ def create_vector_db(submissions):
     # Initialize embeddings using OpenAI
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
-    # Create the vector database using FAISS
+    # Create FAISS vector DB
     vector_db = FAISS.from_texts(
-        [doc["text"] for doc in documents],
+        documents,
         embeddings,
-        metadatas=[doc["metadata"] for doc in documents],
+        metadatas=submission_objects  # Reference the actual submission object as metadata
     )
 
     return vector_db
 
 
-# Flask route for querying the vector database
 @app.route("/query", methods=["POST"])
 def query_vector_db():
     try:
-        # Get the request data containing query and file path
+        # Read data from request
         data = request.get_json()
-        query = data.get("query")
+        query = data.get("query")  # Prompt like "Provide all submission with name: John"
         file_path = data.get("file_path")
+        fetch_all = data.get("fetch_all", False)  # Optional parameter to fetch all results
 
-        if not query or not file_path:
-            return jsonify({"status": "error", "message": "Query or file path is missing"}), 400
+        if not file_path:
+            return jsonify({"status": "error", "message": "File path is missing"}), 400
 
-        # Load submissions from the specified file
+        # Load submissions
         submissions = load_submissions(file_path)
 
         # Create the vector database
         vector_db = create_vector_db(submissions)
 
-        # Perform the search in the vector database
-        retriever = vector_db.as_retriever(search_type="similarity", search_kwargs={"k": 5})
-        search_results = retriever.get_relevant_documents(query)
+        # Handle query-based or fetch-all logic
+        if query:
+            retriever = vector_db.as_retriever(search_type="similarity", search_kwargs={"k": len(submissions)})
+            search_results = retriever.get_relevant_documents(query)
 
-        # Convert `Document` objects to JSON-serializable format
-        results = [
-            {
-                "text": doc.page_content,
-                "metadata": doc.metadata
-            }
-            for doc in search_results
-        ]
+            # Convert retrieved documents to a list of actual submissions
+            results = [doc.metadata for doc in search_results]
 
-        # Return the search results as JSON
+            # Make results more concise if `fetch_all` is False
+            if not fetch_all:
+                results = results[:5]
+
+        else:
+            # Query not provided: Return all submission objects
+            retriever = vector_db.as_retriever(search_type="similarity", search_kwargs={"k": len(submissions)})
+            search_results = retriever.get_relevant_documents("")  # Empty query to extract all
+            results = [doc.metadata for doc in search_results]
+
+        # Return results as JSON
         return jsonify({
             "status": "success",
             "results": results
@@ -81,5 +132,4 @@ def query_vector_db():
 
 
 if __name__ == "__main__":
-    # Start the Flask app
     app.run(host="0.0.0.0", port=5000)

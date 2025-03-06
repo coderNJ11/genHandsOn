@@ -1,0 +1,7 @@
+   curl -X POST http://127.0.0.1:5000/query \
+   -H "Content-Type: application/json" \
+   -d '{
+         "query": "Find all records with name Alice",
+         "file_path": "random_ethnic_names_english.json",
+         "fetch_all": true
+       }'

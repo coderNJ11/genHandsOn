@@ -1,0 +1,54 @@
+install monodb
+brew tap mongodb/brew
+brew install mongodb-community
+
+export PATH="/usr/local/bin:$PATH"
+
+source ~/.bashrc  # Or `source ~/.zshrc`
+
+
+
+
+
+
+
+
+#######################
+1. app = Flask(__name__):
+   - Creates a Flask web application instance.
+
+2. mongo_client = MongoClient("mongodb://localhost:27017/"):
+   - Establishes a connection to the local MongoDB instance.
+
+3. db = mongo_client["your_database_name"]:
+   - Accesses a database called `your_database_name` in MongoDB.
+
+4. flatten_json(json_obj, parent_key="", sep=" "):
+   - Recursively flattens a nested JSON object into a single-level dictionary with combined keys.
+
+5. flatten_and_extract_text(json_record):
+   - Processes a JSON record into a plain text string for further embeddings and retains the original JSON object.
+
+6. preprocess_json_records(records):
+   - Converts a list of JSON records into flattened text strings and original objects for embeddings.
+
+7. fetch_json_records(collection_name, start_date=None, end_date=None):
+   - Fetches JSON data from a MongoDB collection.
+   - Filters records based on a date range (`start_date`, `end_date`) if provided.
+
+8. create_vector_db(json_records):
+   - Creates a FAISS vector database using OpenAI embeddings.
+   - Converts JSON records to embeddings for similarity searches.
+
+9. @app.route("/query", methods=["POST"]):
+   - Defines an API endpoint `/query` for processing search queries based on MongoDB data and FAISS vector search.
+
+10. query_vector_db():
+    - Extracts data (query, collection name, date filters) from the POST request.
+    - Fetches records from the MongoDB collection based on the provided conditions.
+    - Creates a FAISS vector store and performs similarity search on the provided query.
+    - Returns the matching results in JSON format.
+    - Handles errors gracefully.
+
+11. if __name__ == "__main__":
+    - Runs the Flask application on host `0.0.0.0` (accessible on the network) and port `5000`.
